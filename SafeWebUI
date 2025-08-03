@@ -1,0 +1,210 @@
+
+import com.kms.katalon.core.webui.keyword.WebUiBuiltInKeywords as WebUI
+import com.kms.katalon.core.testobject.TestObject
+import com.kms.katalon.core.util.KeywordUtil
+import com.kms.katalon.core.configuration.RunConfiguration
+import java.util.Date
+
+class SafeWebUI {
+
+	static boolean DEBUG_MODE = false  // Toggle to true to rethrow exceptions during dev
+	private static String lastFailureScreenshotPath = ""  // Stores last failure screenshot path
+	private static String lastFailureReason = ""  // Stores last formatted failure message /// added new
+
+	// ====== BASIC ACTIONS ======
+	static void openBrowser(String url = '') {
+		execute("openBrowser", null, url) { WebUI.openBrowser(url) }
+	}
+	static void refresh(String url = '') {
+		execute("refresh", null, url) { WebUI.refresh(url) }
+	}
+
+	static void closeBrowser() {
+		execute("closeBrowser", null) { WebUI.closeBrowser() }
+	}
+
+	static void navigateToUrl(String url) {
+		execute("navigateToUrl", null, url) { WebUI.navigateToUrl(url) }
+	}
+
+	static void delay(int seconds) {
+		KeywordUtil.logInfo("⏳ delay → ${seconds}s")
+		WebUI.delay(seconds)
+	}
+
+	static void takeScreenshot(String filePath = '') {
+		execute("takeScreenshot", null, filePath) { WebUI.takeScreenshot(filePath) }
+	}
+
+	// ====== CLICK & INPUT ======
+	static void click(TestObject to) {
+		execute("click", to) { WebUI.click(to) }
+	}
+
+	static void doubleClick(TestObject to) {
+		execute("doubleClick", to) { WebUI.doubleClick(to) }
+	}
+
+	static void rightClick(TestObject to) {
+		execute("rightClick", to) { WebUI.rightClick(to) }
+	}
+
+	static void setText(TestObject to, String text) {
+		execute("setText", to, text) { WebUI.setText(to, text) }
+	}
+
+	static void setEncryptedText(TestObject to, String encryptedText) {
+		execute("setEncryptedText", to, "********") { WebUI.setEncryptedText(to, encryptedText) }
+	}
+
+	static void clearText(TestObject to) {
+		execute("clearText", to) { WebUI.clearText(to) }
+	}
+
+	// ====== DROPDOWNS ======
+	static void selectOptionByLabel(TestObject to, String label, boolean isRegex = false) {
+		execute("selectOptionByLabel", to, label) { WebUI.selectOptionByLabel(to, label, isRegex) }
+	}
+
+	static void selectOptionByValue(TestObject to, String value, boolean isRegex = false) {
+		execute("selectOptionByValue", to, value) { WebUI.selectOptionByValue(to, value, isRegex) }
+	}
+
+	static void selectOptionByIndex(TestObject to, int index) {
+		execute("selectOptionByIndex", to, index) { WebUI.selectOptionByIndex(to, index) }
+	}
+
+	// ====== WAIT & VERIFY ======
+	static boolean waitForElementVisible(TestObject to, int timeout = 30) {
+		return execute("waitForElementVisible", to, timeout) { WebUI.waitForElementVisible(to, timeout) }
+	}
+
+	static boolean waitForElementClickable(TestObject to, int timeout = 30) {
+		return execute("waitForElementClickable", to, timeout) { WebUI.waitForElementClickable(to, timeout) }
+	}
+
+	static boolean verifyElementVisible(TestObject to) {
+		return execute("verifyElementVisible", to) { WebUI.verifyElementVisible(to) }
+	}
+
+	static boolean verifyElementClickable(TestObject to) {
+		return execute("verifyElementClickable", to) { WebUI.verifyElementClickable(to) }
+	}
+
+	static boolean verifyElementPresent(TestObject to, int timeout = 30) {
+		return execute("verifyElementPresent", to, timeout) { WebUI.verifyElementPresent(to, timeout) }
+	}
+
+	static boolean verifyElementNotPresent(TestObject to, int timeout = 30) {
+		return execute("verifyElementNotPresent", to, timeout) { WebUI.verifyElementNotPresent(to, timeout) }
+	}
+
+	static boolean waitForElementNotVisible(TestObject to, int timeout = 30) {
+		return execute("waitForElementNotVisible", to, timeout) { WebUI.waitForElementNotVisible(to, timeout) }
+	}
+
+	static boolean waitForElementNotPresent(TestObject to, int timeout = 30) {
+		return execute("waitForElementNotPresent", to, timeout) { WebUI.waitForElementNotPresent(to, timeout) }
+	}
+
+	// ====== GETTERS ======
+	static String getText(TestObject to) {
+		return execute("getText", to) { WebUI.getText(to) }
+	}
+
+	static String getAttribute(TestObject to, String attribute) {
+		return execute("getAttribute", to, attribute) { WebUI.getAttribute(to, attribute) }
+	}
+
+	// ====== ASSERTIONS ======
+	static void verifyTextPresent(String text, boolean isRegex = false) {
+		execute("verifyTextPresent", null, text) { WebUI.verifyTextPresent(text, isRegex) }
+	}
+
+	static void verifyTextNotPresent(String text, boolean isRegex = false) {
+		execute("verifyTextNotPresent", null, text) { WebUI.verifyTextNotPresent(text, isRegex) }
+	}
+
+	static void verifyMatch(String actualText, String expectedText, boolean isRegex = false) {
+		execute("verifyMatch", null, expectedText) { WebUI.verifyMatch(actualText, expectedText, isRegex) }
+	}
+
+	// ====== CORE EXECUTION WRAPPER ======
+	private static <T> T execute(String action, TestObject to, Object extra = null, Closure<T> closure) {
+		KeywordUtil.logInfo("▶ ${action} → ${to?.getObjectId() ?: 'NoObject'}${extra ? " (${extra})" : ""
+}")
+
+		try {
+			T result = closure.call()
+			KeywordUtil.logInfo("✅ ${action} succeeded ${extra ? "(${extra})" : ""
+}")
+			return result
+} catch (Exception e) {
+			String screenshotPath = takeFailureScreenshot()
+			StackTraceElement element = getRelevantStackTraceElement(e)
+			String fileName = extractTestCaseFileName(element) ?: "UnknownFile.tc"
+			String objectId = to?.getObjectId() ?: 'null'
+			String reasonText = e.getMessage()?.split('\n')[0] ?: "Unknown Error"
+			String errorType = e.getClass().getSimpleName()
+
+			String message = """
+
+❌ ${action} action ➜ FAILED  
+🔴 Reason     : ${reasonText}
+🔎 Possible Solution:
+	- Please verify that the element is present on the page.
+	- If it is, ensure the locator is correct.
+	- Check for syntax or runtime errors in: ${fileName}
+⚠️ Error       : ${errorType}
+🔎 Object      : ${objectId}
+📸 Screenshot  : ${screenshotPath}
+
+""".stripIndent().trim()
+//Please refrain from reading logs below unless you're a technical user.
+			lastFailureReason = message  // Store it for later use
+			KeywordUtil.markFailed(message)
+			if (DEBUG_MODE) throw e
+			throw e
+}
+}
+
+	// ====== Screenshot & Stack Helpers ======
+	private static String takeFailureScreenshot() {
+		
+		
+		String timestamp = new Date().format("yyyyMMdd_HHmmss")
+		String fileName = "screenshot_${timestamp}.png"
+		String relativePath = "Reports/screenshots/${fileName}"
+		String fullPath = RunConfiguration.getProjectDir() + "/" + relativePath
+
+		new File(fullPath).getParentFile().mkdirs()
+		WebUI.takeScreenshot(fullPath)
+
+		lastFailureScreenshotPath = relativePath
+		return relativePath
+}
+
+	private static StackTraceElement getRelevantStackTraceElement(Throwable e) {
+		return e?.stackTrace?.find { frame ->
+			frame?.fileName?.endsWith('.groovy') &&
+				!frame.className.contains('SafeWebUI') &&
+				!frame.className.contains('WebUiBuiltInKeywords') &&
+				!frame.className.contains('com.kms.katalon')
+} ?: e?.stackTrace?.first()
+}
+
+	private static String extractTestCaseFileName(StackTraceElement element) {
+		if (element == null || element.fileName == null) return null
+		return element.fileName.replace('.groovy', '.tc')
+}
+
+	// ====== Public getter for screenshot tracking ======
+	public static String getLastFailureScreenshotPath() {
+		return lastFailureScreenshotPath
+}
+
+	// ====== Public getter for last failure reason ======
+	public static String getLastFailureReason() {
+	return lastFailureReason
+}
+}
