@@ -1,0 +1,28 @@
+
+import com.kms.katalon.core.util.KeywordUtil
+import com.kms.katalon.core.annotation.Keyword
+
+class ErrorLogger {
+
+	@Keyword
+	static void logErrorWithDetails(String stepName, Exception e, boolean stopExecution = false) {
+		StackTraceElement userFrame = e.stackTrace.find { trace ->
+			!trace.className.startsWith('com.kms.katalon') && !trace.className.contains('WebUIKeywordMain')
+		} ?: e.stackTrace[0]
+
+		def location = "${userFrame.className}.${userFrame.methodName}(${userFrame.fileName}:${userFrame.lineNumber})"
+
+		def message = """
+❌ [STEP FAILED] → ${stepName}
+🔴 Reason        → ${e.getMessage()}
+📍 Failed At     → ${location}
+⚠️ Exception     → ${e.getClass().getSimpleName()}
+        """.stripIndent()
+
+		if (stopExecution) {
+			KeywordUtil.markFailedAndStop(message)  // This stops test and prevents full trace
+		} else {
+			KeywordUtil.markFailed(message)         // This logs, but test continues
+		}
+	}
+}
