@@ -1,0 +1,132 @@
+import groovy.json.JsonOutput
+import java.net.HttpURLConnection
+import java.net.URL
+import javax.net.ssl.*
+import java.nio.file.Files
+import java.nio.file.Paths
+
+public class AzureBugReporter {
+
+	static {
+		// ❗INSECURE: Disable SSL verification (use only for testing non-prod environments)
+		def trustAllCerts = [
+			[
+				getAcceptedIssuers: { -> null },
+				checkClientTrusted: { chain, authType -> },
+				checkServerTrusted: { chain, authType ->
+				}
+			] as X509TrustManager
+		]
+
+		SSLContext sc = SSLContext.getInstance("SSL")
+		sc.init(null, trustAllCerts as TrustManager[], new java.security.SecureRandom())
+		HttpsURLConnection.setDefaultSSLSocketFactory(sc.socketFactory)
+		HttpsURLConnection.setDefaultHostnameVerifier({ hostname, session -> true })
+	}
+
+	String organization = "IMO"
+	String project = "Automation Testing"
+	String pat = "vob5tzkdpxa6pn7thhapr4aegr5ijqdmskwpihb3p44ohg5z2pp56qli"
+
+	String getAuthHeader() {
+		return "Basic " + ":${pat}".bytes.encodeBase64().toString()
+	}
+
+	String uploadAttachment(String filePath) {
+		try {
+			String encodedProject = project.replace(" ", "%20")
+			String fileName = Paths.get(filePath).getFileName().toString()
+			String urlStr = "https://devops.imo.gov.sa/${organization}/${encodedProject}/_apis/wit/attachments?fileName=${fileName}&api-version=7.1-preview.3"
+
+			byte[] fileBytes = Files.readAllBytes(Paths.get(filePath))
+
+			HttpURLConnection connection = (HttpURLConnection) new URL(urlStr).openConnection()
+			connection.setRequestProperty("Authorization", getAuthHeader())
+			connection.setRequestProperty("Content-Type", "application/octet-stream")
+			connection.setRequestMethod("POST")
+			connection.setDoOutput(true)
+
+			connection.outputStream.withStream { it.write(fileBytes) }
+
+			int responseCode = connection.responseCode
+			if (responseCode >= 200 && responseCode < 300) {
+				def jsonResponse = new groovy.json.JsonSlurper().parse(connection.inputStream)
+				return jsonResponse.url  // attachment URL to use in bug creation
+			} else {
+				println "❌ Failed to upload attachment! Response: ${responseCode}"
+				connection.errorStream.withReader { println it.text }
+				return null
+			}
+		} catch (Exception e) {
+			println "❌ Exception uploading attachment: ${e.message}"
+			e.printStackTrace()
+			return null
+		}
+	}
+
+	def createAzureBug(String title, String description, String screenshotPath = null) {
+		String encodedProject = project.replace(" ", "%20")
+		String urlStr = "https://devops.imo.gov.sa/${organization}/${encodedProject}/_apis/wit/workitems/\$Bug?api-version=7.1-preview.3"
+
+		println "▶️ Creating Azure DevOps Bug: ${title}"
+
+		def payload = [
+			[
+				"op": "add",
+				"path": "/fields/System.Title",
+				"value": title
+			],
+			[
+				"op": "add",
+				"path": "/fields/System.Description",
+				"value": "<pre>${description}</pre>"
+			]
+		]
+
+		// If screenshotPath provided, upload attachment and add relation
+		if (screenshotPath) {
+			String attachmentUrl = uploadAttachment(screenshotPath)
+			if (attachmentUrl) {
+				payload << [
+					"op": "add",
+					"path": "/relations/-",
+					"value": [
+						"rel": "AttachedFile",
+						"url": attachmentUrl,
+						"attributes": [
+							"comment": "Screenshot attached"
+						]
+					]
+				]
+			} else {
+				println "⚠️ Attachment upload failed, continuing without screenshot attachment."
+			}
+		}
+
+		try {
+			HttpURLConnection connection = (HttpURLConnection) new URL(urlStr).openConnection()
+			connection.setRequestProperty("Authorization", getAuthHeader())
+			connection.setRequestProperty("Content-Type", "application/json-patch+json")
+			connection.setRequestMethod("POST")
+			connection.setDoOutput(true)
+
+			OutputStreamWriter writer = new OutputStreamWriter(connection.outputStream)
+			writer.write(JsonOutput.toJson(payload))
+			writer.flush()
+			writer.close()
+
+			int responseCode = connection.responseCode
+			println "🔁 Response: ${responseCode} - ${connection.responseMessage}"
+
+			if (responseCode >= 200 && responseCode < 300) {
+				println "✅ Bug created successfully in Azure DevOps!"
+			} else {
+				println "❌ Failed to create bug!"
+				connection.inputStream.withReader { reader -> println reader.text }
+			}
+		} catch (Exception e) {
+			println "❌ Exception occurred while creating bug: ${e.message}"
+			e.printStackTrace()
+		}
+	}
+}
