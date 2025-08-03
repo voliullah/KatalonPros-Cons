@@ -1,0 +1,85 @@
+import com.kms.katalon.core.annotation.AfterTestCase
+import com.kms.katalon.core.annotation.AfterTestSuite
+import com.kms.katalon.core.context.TestCaseContext
+import com.kms.katalon.core.context.TestSuiteContext
+
+class TestListener {
+
+	static Map<String, Map> failedTestDetails = [:]  // {testCaseId: [screenshot: ..., reason: ...]}
+
+	@AfterTestCase
+	def handleTestCaseFailure(TestCaseContext testCaseContext) {
+		String testCaseId = testCaseContext.getTestCaseId()
+		String status = testCaseContext.getTestCaseStatus()
+		String screenshotPath = SafeWebUI.getLastFailureScreenshotPath()
+
+		if (status == "FAILED") {
+			println "❌ Test Failed: ${testCaseId}"
+			println "📸 Screenshot Path: ${screenshotPath}"
+
+			// Use last formatted failure block
+			String reasonBlock = SafeWebUI.getLastFailureReason()
+
+			failedTestDetails[testCaseId] = [
+				screenshot: screenshotPath,
+				reason    : reasonBlock
+			]
+		}
+	}
+
+	private String extractReasonFromError(String error) {
+		if (error == null || error.isEmpty()) return "No detailed reason captured."
+
+		def matcher = error =~ /(?s)Reason:(.*?)(Please refrain|$)/
+		if (matcher.find()) {
+			def raw = matcher.group(1).trim()
+
+			// Filter unnecessary lines
+			def cleaned = raw.readLines()
+				.findAll { line ->
+					def trimmed = line.trim()
+					return !(trimmed == '...' || trimmed == '... ... ...' ||
+							trimmed.startsWith('📸 Screenshot') ||
+							trimmed.isEmpty())
+				}
+				.join('\n')
+				.trim()
+
+			return cleaned
+		}
+		return "No clear reason block found."
+	}
+
+	@AfterTestSuite
+	def reportBugsToAzure(TestSuiteContext testSuiteContext) {
+		if (failedTestDetails.isEmpty()) {
+			println "✅ No test failures to report in suite: ${testSuiteContext.getTestSuiteId()}"
+			return
+		}
+
+		println "\n📢 Reporting bugs to Azure DevOps..."
+		AzureBugReporter reporter = new AzureBugReporter()
+
+		failedTestDetails.each { testCaseId, info ->
+			String screenshotPath = info.screenshot
+			String reason = info.reason
+
+			String title = "Test Case Failed: ${testCaseId}"
+			String description = """
+Automated Test Failure 
+
+Test Case ID: ${testCaseId}
+
+Reason:
+${reason}
+
+Check the Katalon logs for further details.
+""".stripIndent().trim()
+				
+			reporter.createAzureBug(title, description, screenshotPath)
+		}
+
+		println "📤 Bug reporting complete."
+	}
+}
+
