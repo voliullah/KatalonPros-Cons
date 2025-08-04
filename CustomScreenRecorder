@@ -1,6 +1,6 @@
 //for video recording add this file into the Test Listener folder along with another file uploaded with the name VideoRecoderListener and also add the monte screen recorder jar file to the driver folder of your system to record the failed test cases.
 
-
+//Make sure that the jar file version is 0.7.7.0
 //CustomScreenRecorder.groovy 
 
 import org.monte.screenrecorder.ScreenRecorder
